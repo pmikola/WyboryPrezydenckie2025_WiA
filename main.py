@@ -4,6 +4,7 @@
 #  https://wybory.gov.pl/prezydent2025/pl/dane_w_arkuszach
 import matplotlib
 import pandas as pd, numpy as np, matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 matplotlib.use("TkAgg")
 path = "protokoly_po_obwodach_utf8.xlsx"
 df = pd.read_excel(path, sheet_name="protokoly_po_obwodach_utf8")
@@ -43,10 +44,105 @@ plt.tight_layout()
 plt.show()
 # plt.savefig("fractions_hist.png", dpi=300)
 
+file = "protokoly_po_obwodach_utf8.xlsx"
+df   = pd.read_excel(file, sheet_name="protokoly_po_obwodach_utf8")
+
+elig1 = "1 tura - Liczba wyborców uprawnionych do głosowania"
+elig2 = "2 tura – Liczba wyborców uprawnionych do głosowania"
+n2    = "2 tura Nawrocki"
+t2    = "2 tura Trzaskowski"
+
+df = df[(df[elig1] > 0) & (df[elig2] > 0)]
+
+delta_elig = df[elig2] - df[elig1]              # przyrost uprawnionych
+threshold  = np.nanpercentile(delta_elig, 99)   # górny 1 % wartości
+
+vote_diff  = df[n2] - df[t2]
+lim_vote   = np.nanpercentile(abs(vote_diff), 99)
+norm_cd    = mcolors.TwoSlopeNorm(vmin=-lim_vote, vcenter=0, vmax=lim_vote)
+cmap_cd    = plt.get_cmap("bwr")
+
+# maski
+top_growth = delta_elig >= threshold
+
+plt.figure(figsize=(10, 7))
+
+plt.scatter(df.loc[~top_growth, elig1],
+            df.loc[~top_growth, elig2],
+            s=6, alpha=0.2, color="grey", label="pozostałe komisje")
+
+sc = plt.scatter(df.loc[top_growth, elig1],
+                 df.loc[top_growth, elig2],
+                 c=vote_diff[top_growth],
+                 cmap=cmap_cd, norm=norm_cd,
+                 edgecolors="black", linewidths=0.3,
+                 s=30, alpha=0.9,
+                 label="górny 1 % Δ uprawnionych")
+
+max_axis = max(df[elig1].max(), df[elig2].max())
+plt.plot([0, max_axis], [0, max_axis], linestyle="--", color="black", linewidth=0.7)
+
+plt.colorbar(sc, label="Przewaga głosów (Nawrocki − Trzaskowski)  •  II tura")
+plt.xlabel("Uprawnieni do głosowania – I tura")
+plt.ylabel("Uprawnieni do głosowania – II tura")
+plt.title("Komisje z największym przyrostem uprawnionych między turami\n"
+          "(kolor: kto zyskał więcej głosów w II turze)")
+plt.legend(frameon=False)
+plt.tight_layout()
+plt.show()
+
+
+
+import pandas as pd, numpy as np, matplotlib.pyplot as plt, matplotlib.colors as mcolors
+file = "protokoly_po_obwodach_utf8.xlsx"
+df   = pd.read_excel(file, sheet_name="protokoly_po_obwodach_utf8")
+
+b1 = "1 tura - Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
+b2 = "2 tura – Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
+n1, n2 = "1 tura Nawrocki", "2 tura Nawrocki"
+t1, t2 = "1 tura Trzaskowski", "2 tura Trzaskowski"
+
+df = df[(df[b1] > 0) & (df[b2] > 0)]
+
+shr_n1, shr_n2 = df[n1]/df[b1], df[n2]/df[b2]
+shr_t1, shr_t2 = df[t1]/df[b1], df[t2]/df[b2]
+log_ratio      = np.log2((shr_t2/shr_n2) / (shr_t1/shr_n1))
+
+lim   = np.nanpercentile(abs(log_ratio), 99)
+norm  = mcolors.TwoSlopeNorm(vmin=-lim, vcenter=0, vmax=lim)
+cmap  = plt.get_cmap("bwr")
+
+x = df[b2]
+y = df[b2] - (df[n2] + df[t2])
+
+flip = np.sign(df[n1]-df[t1]) != np.sign(df[n2]-df[t2])
+
+plt.figure(figsize=(10,6))
+
+sc = plt.scatter(x, y, c=log_ratio, cmap=cmap, norm=norm,
+                 s=14, alpha=0.8, edgecolors="none")
+
+# flip_sc = plt.scatter(x[flip], y[flip],
+#                       facecolors="none",
+#                       edgecolors="black",
+#                       linewidths=0.1,        # cieniutka ramka
+#                       alpha=0.1,             # pół-przezroczysta
+#                       s=40,
+#                       label="zamiana lidera (Trz ↔ Naw)")
+
+plt.colorbar(sc, label="log₂ ( ratio Trz/Naw II ÷ ratio I )")
+plt.axhline(0, linestyle=":", color="grey")
+plt.xlabel("wydane karty (II tura)")
+plt.ylabel("karty − głosy (II tura)")
+plt.title("Karty wydane vs. zagospodarowane głosy\nKolor → zmiana relacji Trz/Naw")
+# plt.legend(handles=[flip_sc], frameon=False)
+plt.tight_layout()
+plt.show()
+
 for name, d in candidates.items():
     sigma = df[d["rozb"]].std()
     plt.figure(figsize=(8, 6))
-    plt.hist(df[d["rozb"]], bins=50, edgecolor="k")
+    plt.hist(df[d["rozb"]], bins=100, edgecolor="k")
     plt.axvline(3 * sigma, linestyle="--")
     plt.axvline(-3 * sigma, linestyle="--")
     plt.xlabel(f"Rozbieżność dla {name} (głosów)")
@@ -59,19 +155,70 @@ for name, d in candidates.items():
     df[f"udz1_{name}"] = df[d["c1"]] / df[ballots1]
     df[f"udz2_{name}"] = df[d["c2"]] / df[ballots2]
     df[f"delta_share_{name}"] = df[f"udz2_{name}"] - df[f"udz1_{name}"]
+
     z = (df[f"delta_share_{name}"] - df[f"delta_share_{name}"].mean()) / df[f"delta_share_{name}"].std()
+    mask = abs(z) > 3
+
     plt.figure(figsize=(8, 6))
-    plt.scatter(df["delta_turn"], df[f"delta_share_{name}"], s=6, alpha=0.3)
-    plt.scatter(df.loc[abs(z) > 3, "delta_turn"], df.loc[abs(z) > 3, f"delta_share_{name}"],
-                color="red", s=20, edgecolor="k")
+    plt.scatter(df.loc[~mask, "delta_turn"],
+                df.loc[~mask, f"delta_share_{name}"],
+                s=6, alpha=0.3,
+                label=r"$|\Delta|\;\leq\;3\sigma$")
+
+    plt.scatter(df.loc[mask, "delta_turn"],
+                df.loc[mask, f"delta_share_{name}"],
+                color="red", edgecolor="k", s=20,
+                label=r"$|\Delta|\;>\;3\sigma$")
+
     plt.axhline(0, linestyle=":")
     plt.axvline(0, linestyle=":")
     plt.xlabel("Zmiana frekwencji (II – I tura)")
     plt.ylabel(f"Zmiana udziału {name} (II – I tura)")
     plt.title(f"Δ udział vs Δ frekwencja – {name}")
+    plt.legend(frameon=False)
     plt.tight_layout()
     plt.show()
+
     # plt.savefig(f"delta_{name}.png", dpi=300)
+
+z_n   = (df["delta_share_Nawrocki"]     - df["delta_share_Nawrocki"].mean())     / df["delta_share_Nawrocki"].std()
+z_t   = (df["delta_share_Trzaskowski"]  - df["delta_share_Trzaskowski"].mean())  / df["delta_share_Trzaskowski"].std()
+
+norm_n = abs(z_n) <= 3
+anom_n = abs(z_n) >  3
+norm_t = abs(z_t) <= 3
+anom_t = abs(z_t) >  3
+
+plt.figure(figsize=(8, 6))
+
+plt.scatter(df.loc[norm_n, "delta_turn"],
+            df.loc[norm_n, "delta_share_Nawrocki"],
+            s=6, alpha=0.3, color="tab:blue",
+            label="Nawrocki |Δ| ≤ 3σ")
+
+plt.scatter(df.loc[anom_n, "delta_turn"],
+            df.loc[anom_n, "delta_share_Nawrocki"],
+            marker="o", edgecolor="k", color="tab:blue", s=20,
+            label="Nawrocki |Δ| > 3σ")
+
+plt.scatter(df.loc[norm_t, "delta_turn"],
+            df.loc[norm_t, "delta_share_Trzaskowski"],
+            s=6, alpha=0.3, color="tab:orange",
+            label="Trzaskowski |Δ| ≤ 3σ")
+
+plt.scatter(df.loc[anom_t, "delta_turn"],
+            df.loc[anom_t, "delta_share_Trzaskowski"],
+            marker="^", edgecolor="k", color="tab:orange", s=20,
+            label="Trzaskowski |Δ| > 3σ")
+
+plt.axhline(0, linestyle=":")
+plt.axvline(0, linestyle=":")
+plt.xlabel("Zmiana frekwencji (II – I tura)")
+plt.ylabel("Zmiana udziału (II – I tura)")
+plt.title("Δ udział vs Δ frekwencja – Nawrocki & Trzaskowski")
+plt.legend(frameon=False)
+plt.tight_layout()
+plt.show()
 
 plik = "protokoly_po_obwodach_utf8.xlsx"
 df   = pd.read_excel(plik, sheet_name="protokoly_po_obwodach_utf8")
