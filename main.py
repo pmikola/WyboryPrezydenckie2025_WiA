@@ -2,13 +2,20 @@
 #  PL Presidential elections validity
 # Attention: Used datasets in calculations
 #  https://wybory.gov.pl/prezydent2025/pl/dane_w_arkuszach
+import sys
 import matplotlib
 import pandas as pd, numpy as np, matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import plotly.graph_objects as go
+import plotly.offline as pyo
+import plotly.express as px
+import webbrowser, os
+import colorsys
+
 matplotlib.use("TkAgg")
 path = "protokoly_po_obwodach_utf8.xlsx"
 df = pd.read_excel(path, sheet_name="protokoly_po_obwodach_utf8")
-
+FLOW_SHEET  = "przepływy"
 eligible1 = "1 tura - Liczba wyborców uprawnionych do głosowania"
 ballots1 = "1 tura - Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
 eligible2 = "2 tura – Liczba wyborców uprawnionych do głosowania"
@@ -31,6 +38,141 @@ df["frekw_1"] = df[ballots1] / df[eligible1]
 df["frekw_2"] = df[ballots2] / df[eligible2]
 df["delta_turn"] = df["frekw_2"] - df["frekw_1"]
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
+file_path = "protokoly_po_obwodach_utf8.xlsx"
+sheet     = "protokoly_po_obwodach_utf8"
+file_path_1 = "protokoly_po_obwodach_w_pierwszej_turze_utf8.xlsx"
+sheet_1     = "Arkusz"
+file_path_2 = "protokoly_po_obwodach_w_drugiej_turze_utf8.xlsx"
+sheet_2     = "Arkusz"
+n1 = "1 tura Nawrocki"
+n2 = "2 tura Nawrocki"
+t1 = "1 tura Trzaskowski"
+t2 = "2 tura Trzaskowski"
+b1 = "1 tura - Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
+b2 = "2 tura – Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
+
+transfer_pct_to_n = {
+    "BARTOSZEWICZ": 0.673,
+    "BIEJAT"      : 0.098,
+    "BRAUN"       : 0.925,
+    "HOŁOWNIA"    : 0.138,
+    "JAKUBIAK"    : 0.903,
+    "MACIAK"      : 0.729,
+    "MENTZEN"     : 0.881,
+    "NAWROCKI"    : 1.,
+    "SENYSZYN"    : 0.189,
+    "STANOWSKI"   : 0.512,
+    "TRZASKOWSKI" : 0.,
+    "WOCH"        : 0.654,
+    "ZANDBERG"    : 0.162,
+}
+df_1 = pd.read_excel(file_path_1, sheet_name=sheet_1)
+df_2 = pd.read_excel(file_path_2, sheet_name=sheet_2)
+
+full_names_1 = df_1.columns[-13:].tolist()
+tcfu1 = df_1.columns[-22]
+total_cards_from_urns_1 = df_1[tcfu1].to_numpy(dtype=float)
+tcefu1 = df_1.columns[-19]
+total_cards_eligible_from_urns_1 = df_1[tcefu1].to_numpy(dtype=float)
+avm1 = df_1.columns[-18]
+all_votes_missed_1 = df_1[avm1].fillna(0).to_numpy(dtype=float)
+cwsx1 = df_1.columns[-17]
+cards_with_second_x_1 = df_1[cwsx1].fillna(0).to_numpy(dtype=float)
+
+full_names_2 = df_2.columns[-2:].tolist()
+tcfu2 = df_2.columns[-10]
+total_cards_from_urns_2 = df_2[tcfu2].fillna(0).to_numpy(dtype=float)
+tcefu2 = df_2.columns[-7]
+total_cards_eligible_from_urns_2 = df_2[tcefu2].fillna(0).to_numpy(dtype=float)
+avm2 = df_2.columns[-6]
+all_votes_missed_2 = df_2[avm2].fillna(0).to_numpy(dtype=float)
+cwsx2 = df_2.columns[-5]
+cards_with_second_x_2 = df_2[cwsx2].fillna(0).to_numpy(dtype=float)
+all_mised_2 = total_cards_from_urns_2 -total_cards_eligible_from_urns_2 + all_votes_missed_2
+
+names_1 = [fn.split()[0] for fn in full_names_1]
+names_2 = [fn.split()[0] for fn in full_names_2]
+first_round_votes = df_1[full_names_1].to_numpy(dtype=float)
+second_round_votes = df_2[full_names_2].to_numpy(dtype=float)
+avg_votes_per_cand = first_round_votes.mean(axis=0)
+first_round_votes = (df_1[full_names_1].fillna(0).to_numpy(dtype=float))
+total_first_votes = np.sum(first_round_votes,axis=0)
+
+
+
+sys.exit()
+idx_naw   = names_2.index(names_2[0])
+idx_other = 1 - idx_naw
+
+flows = np.zeros((13, 2), dtype=float)
+for i, lname in enumerate(names_1):
+    p = transfer_pct_to_n[lname]
+    flows[i, idx_naw]   = total_first_votes[i] * p
+    flows[i, idx_other] = total_first_votes[i] * (1 - p)
+
+# ─── 3. Prepare the Sankey link lists ────────────────────────────────────────────
+src, tgt, vals = [], [], []
+for i in range(13):
+    for j in range(2):
+        src.append(i)
+        tgt.append(13 + j)
+        vals.append(flows[i, j])
+
+# ─── 4. Generate a base color palette ────────────────────────────────────────────
+# take 13 distinct colors
+base_colors = px.colors.qualitative.Dark24[:13]
+
+def adjust_lightness(hex_color, factor):
+    h = hex_color.lstrip('#')
+    r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+    h_l, l, s = colorsys.rgb_to_hls(r/255, g/255, b/255)
+    l = max(0, min(1, l * factor))
+    r2, g2, b2 = colorsys.hls_to_rgb(h_l, l, s)
+    return f'#{int(r2*255):02x}{int(g2*255):02x}{int(b2*255):02x}'
+
+link_colors = []
+for i, base in enumerate(base_colors):
+    # lighten for Nawrocki, darken for the other
+    light = adjust_lightness(base, 1.3)
+    dark  = adjust_lightness(base, 0.7)
+    link_colors.extend([light, dark])
+
+node_labels = names_1 + names_2
+fig = go.Figure(go.Sankey(
+    arrangement="snap",
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color="black", width=0.5),
+        label=node_labels
+    ),
+    link=dict(
+        source=src,
+        target=tgt,
+        value=vals,
+        color=link_colors
+    )
+))
+fig.update_layout(
+    title_text="Przepływ I tura → II tura (Nawrocki vs Trzaskowski)",
+    font_size=12,
+    width=900,
+    height=600
+)
+
+out = "sankey_colored.html"
+fig.write_html(out, include_plotlyjs="include", full_html=True)
+webbrowser.open("file://" + os.path.abspath(out))
+
+sys.exit()
+print(names_2)
+
+
 fractional = pd.concat([(df["frekw_1"] * 100) % 1, (df["frekw_2"] * 100) % 1])
 plt.figure(figsize=(8, 6))
 bins = np.linspace(0, 1, 21)
@@ -42,16 +184,14 @@ plt.ylabel("Liczba obwodów")
 plt.title("Histogram części dziesiętnej frekwencji (obie tury)")
 plt.tight_layout()
 plt.show()
-# plt.savefig("fractions_hist.png", dpi=300)
+plt.savefig("fractions_hist.png", dpi=300)
 
 file = "protokoly_po_obwodach_utf8.xlsx"
 df   = pd.read_excel(file, sheet_name="protokoly_po_obwodach_utf8")
-
 elig1 = "1 tura - Liczba wyborców uprawnionych do głosowania"
 elig2 = "2 tura – Liczba wyborców uprawnionych do głosowania"
 n2    = "2 tura Nawrocki"
 t2    = "2 tura Trzaskowski"
-
 df = df[(df[elig1] > 0) & (df[elig2] > 0)]
 
 delta_elig = df[elig2] - df[elig1]              # przyrost uprawnionych
@@ -62,11 +202,9 @@ lim_vote   = np.nanpercentile(abs(vote_diff), 99)
 norm_cd    = mcolors.TwoSlopeNorm(vmin=-lim_vote, vcenter=0, vmax=lim_vote)
 cmap_cd    = plt.get_cmap("bwr")
 
-# maski
 top_growth = delta_elig >= threshold
 
 plt.figure(figsize=(10, 7))
-
 plt.scatter(df.loc[~top_growth, elig1],
             df.loc[~top_growth, elig2],
             s=6, alpha=0.2, color="grey", label="pozostałe komisje")
@@ -91,17 +229,15 @@ plt.legend(frameon=False)
 plt.tight_layout()
 plt.show()
 
-
-
 import pandas as pd, numpy as np, matplotlib.pyplot as plt, matplotlib.colors as mcolors
 file = "protokoly_po_obwodach_utf8.xlsx"
-df   = pd.read_excel(file, sheet_name="protokoly_po_obwodach_utf8")
-
 b1 = "1 tura - Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
 b2 = "2 tura – Liczba wyborców, którym wydano karty do głosowania w\xa0lokalu wyborczym oraz w\xa0głosowaniu korespondencyjnym"
 n1, n2 = "1 tura Nawrocki", "2 tura Nawrocki"
 t1, t2 = "1 tura Trzaskowski", "2 tura Trzaskowski"
-
+df["turn_1"]     = df[b1] / df[elig1]
+df["turn_2"]     = df[b2] / df[elig2]
+df["delta_turn"] = df["turn_2"] - df["turn_1"]
 df = df[(df[b1] > 0) & (df[b2] > 0)]
 
 shr_n1, shr_n2 = df[n1]/df[b1], df[n2]/df[b2]
