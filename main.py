@@ -2,7 +2,10 @@
 #  PL Presidential elections validity
 # Attention: Used datasets in calculations
 #  https://wybory.gov.pl/prezydent2025/pl/dane_w_arkuszach
+import io
 import sys
+import zipfile
+
 import matplotlib
 import pandas as pd, numpy as np, matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -11,6 +14,15 @@ import plotly.offline as pyo
 import plotly.express as px
 import webbrowser, os
 import colorsys
+from geopy import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import os, math, json, time, requests, pandas as pd
+from tqdm.auto import tqdm
+from xml.etree import ElementTree as ET
 
 matplotlib.use("TkAgg")
 path = "protokoly_po_obwodach_utf8.xlsx"
@@ -37,11 +49,6 @@ candidates = {
 df["frekw_1"] = df[ballots1] / df[eligible1]
 df["frekw_2"] = df[ballots2] / df[eligible2]
 df["delta_turn"] = df["frekw_2"] - df["frekw_1"]
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 
 file_path = "protokoly_po_obwodach_utf8.xlsx"
 sheet     = "protokoly_po_obwodach_utf8"
@@ -94,7 +101,10 @@ all_votes_missed_2 = df_2[avm2].fillna(0).to_numpy(dtype=float)
 cwsx2 = df_2.columns[-5]
 cards_with_second_x_2 = df_2[cwsx2].fillna(0).to_numpy(dtype=float)
 all_mised_2 = total_cards_from_urns_2 -total_cards_eligible_from_urns_2 + all_votes_missed_2
-
+da2 = df_2.columns[6]
+district_adresses_2 = df_2[da2]#.str.split(",", n=1, expand=True)[1].str.replace(".","")
+# print(district_adresses_2[0:1])
+# sys.exit()
 names_1 = [fn.split()[0] for fn in full_names_1]
 names_2 = [fn.split()[0] for fn in full_names_2]
 first_round_votes = df_1[full_names_1].to_numpy(dtype=float)
@@ -104,18 +114,145 @@ first_round_votes = (df_1[full_names_1].fillna(0).to_numpy(dtype=float))
 total_first_votes = np.sum(first_round_votes,axis=0)
 
 
+PARQUET_PATH = "pooling_districts_PL.parquet"
+download_coord_data = True
+TOKEN = "pk.eyJ1IjoicG1pa29sMSIsImEiOiJjbWJtaHdraWIxMmxoMmtxdjV2ZGM3a285In0.P0S7qlTM4yZq9noJaAcwzw"
+tomtom_api_key = "FDdJ6DFVf9tsNx2XzddR5T12ZkmQ81W9"
+google_api_key = "AIzaSyA367-N-J9P9Ash_Nm0kChdtVlnSaxPmxY"
 
+if download_coord_data and not os.path.exists(PARQUET_PATH):
+    BATCH_URL = "https://api.mapbox.com/search/geocode/v6/batch"
+
+    queries = district_adresses_2
+    CHUNK   = 10
+    n_calls = math.ceil(len(queries) / CHUNK)
+
+    def make_body(slice_):
+        return [{"types": ["address"], "q": addr, "limit": 1} for addr in slice_]
+
+    lat, lon = [], []
+    for i in tqdm(range(n_calls), desc="Geocoding"):
+        chunk = queries[i*CHUNK:(i+1)*CHUNK]
+        body  = make_body(chunk)
+        params = {"access_token": TOKEN}
+        r = requests.post(BATCH_URL, params=params,
+                          headers={"Content-Type": "application/json"},
+                          data=json.dumps(body))
+        r.raise_for_status()
+        for res in r.json()["batch"]:
+            if res.get("features") is not None:
+                if res["features"]:
+                    g = res["features"][0]["geometry"]["coordinates"]
+                    lon.append(g[0]);  lat.append(g[1])
+                else:                                  # no hit
+                    lon.append(None); lat.append(None)
+                    print(res)
+                    sys.exit()
+            else:  # no hit
+                lon.append(None);lat.append(None)
+                print(res)
+                sys.exit()
+        time.sleep(1)
+
+    out_paraquet = pd.DataFrame({"query": queries,
+                        "latitude": lat,
+                        "longitude": lon})
+
+    out_paraquet.to_parquet(PARQUET_PATH)
+    print(f"Finished – coordinates saved to {PARQUET_PATH}")
+    print(out_paraquet)
+else:
+    out_paraquet = pd.read_parquet(PARQUET_PATH, engine="pyarrow")#.dropna()
+    # print(out_paraquet['query'])
+    # sys.exit()
+    filled_paraqued_path = "out_paraquet_completed.parquet"
+    mask_missing_street = (
+    out_paraquet['latitude'].isna()
+    | out_paraquet['longitude'].isna()
+    )
+    adr_list = out_paraquet["query"].tolist()
+    # TODO : filling missed geocords
+    time.sleep(1)
+    # print(mask_missing_street)
 sys.exit()
-idx_naw   = names_2.index(names_2[0])
-idx_other = 1 - idx_naw
+# print(out_paraquet['latitude'],out_paraquet['longitude'])
+lat_min, lat_max = 49.002063, 54.835563
+lon_min, lon_max = 14.124562, 24.145562
+# filtered_out_paraquet = out_paraquet
+filtered_out_paraquet = out_paraquet[
+    out_paraquet['latitude'].between(lat_min, lat_max) &
+    out_paraquet['longitude'].between(lon_min, lon_max)
+]
+import geopandas as gpd
+import pandas as pd
+gdf_points = gpd.GeoDataFrame(
+    filtered_out_paraquet,
+    geometry=gpd.points_from_xy(filtered_out_paraquet['longitude'], filtered_out_paraquet['latitude']),
+    crs="EPSG:4326"
+)
 
+gdf_muni = gpd.read_file("PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp")
+#gdf_muni = gdf_muni.to_crs("EPSG:4326"),
+
+print(filtered_out_paraquet['latitude'])
+fig, ax = plt.subplots(figsize=(6, 6))
+gdf_muni.plot(ax=ax, edgecolor="gray", facecolor="none", linewidth=0.5)
+gdf_points.plot(
+    ax=ax,
+    marker=".",
+    color="red",
+    markersize=3,
+    label="Filtered Points"
+)
+
+ax.set_title("Jednostki ewidencyjne")
+ax.legend()
+plt.show()
+sys.exit()
+idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
+flows = np.zeros((*first_round_votes.shape, 2))
+for k, name in enumerate(names_1):
+    p = transfer_pct_to_n[name]
+    flows[:, k, idx_naw]   = first_round_votes[:, k] * p
+    flows[:, k, idx_trz] = first_round_votes[:, k] * (1 - p)
+
+flow_sum = flows.sum(axis=1)
+eps = 1e-6
+r1 = flow_sum[:, idx_trz] / (flow_sum[:, idx_naw] + eps)
+r2 = second_round_votes[:, idx_trz] / (second_round_votes[:, idx_naw] + eps)
+mask = np.isfinite(r1) & np.isfinite(r2)
+r1, r2 = r1[mask], r2[mask]
+p1 = r1 / (1 + r1)
+p2 = r2 / (1 + r2)
+pct_shift = 100 * (p2 - p1)
+
+lim = np.nanmax(np.abs(pct_shift))
+norm = mcolors.TwoSlopeNorm(vmin=-lim, vcenter=0, vmax=lim)
+cmap = plt.get_cmap("coolwarm")
+fig, ax = plt.subplots(figsize=(6,6))
+sc = ax.scatter(p1, p2, c=pct_shift, cmap=cmap, norm=norm, s=8, alpha=0.6)
+ax.plot([0,1], [0,1], "--k", lw=1)
+ax.set_xlabel("Udział Trz/Naw (I tura)")
+ax.set_ylabel("Udział Trz/Naw (II tura)")
+ax.set_title("Zmiana udziału Trz/Naw\nz udziałem głosów innych kandydatów (z I tury)")
+fig.colorbar(sc, ax=ax, label="% zmiany udziału Trz/Naw (II vs I)")
+ax.grid(True, linestyle=":")
+
+fig.text(0.45, 0.5, "@rezolucjonista", fontsize=40,
+         color="black", alpha=0.05, ha="center", va="center", rotation=30)
+
+plt.tight_layout()
+plt.show()
+sys.exit()
 flows = np.zeros((13, 2), dtype=float)
 for i, lname in enumerate(names_1):
     p = transfer_pct_to_n[lname]
     flows[i, idx_naw]   = total_first_votes[i] * p
     flows[i, idx_other] = total_first_votes[i] * (1 - p)
 
-# ─── 3. Prepare the Sankey link lists ────────────────────────────────────────────
+print(flows)
+sys.exit()
+
 src, tgt, vals = [], [], []
 for i in range(13):
     for j in range(2):
@@ -123,8 +260,6 @@ for i in range(13):
         tgt.append(13 + j)
         vals.append(flows[i, j])
 
-# ─── 4. Generate a base color palette ────────────────────────────────────────────
-# take 13 distinct colors
 base_colors = px.colors.qualitative.Dark24[:13]
 
 def adjust_lightness(hex_color, factor):
