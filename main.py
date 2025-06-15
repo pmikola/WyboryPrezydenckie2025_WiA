@@ -205,8 +205,8 @@ df_votes[["x2180", "y2180"]] = df_votes["Siedziba"].apply(
 naw = "NAWROCKI Karol Tadeusz"
 trz = "TRZASKOWSKI Rafał Kazimierz"
 
-df_votes["score"] = ((all_votes_missed_2 - all_votes_missed_1) )#(df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
-df_votes["tot"]   = all_votes_missed_2#df_votes[trz] + df_votes[naw]
+df_votes["score"] = (cards_with_second_x_2-cards_with_second_x_1)#(df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
+df_votes["tot"]   = (cards_with_second_x_1 + cards_with_second_x_2)#df_votes[trz] + df_votes[naw]
 
 tv_min, tv_max = df_votes["tot"].min(), df_votes["tot"].max()
 df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)
@@ -235,10 +235,10 @@ sc = ax.scatter(
     s=gdf_pts["msize"] * 0.8, alpha=0.8, edgecolors="none"
 )
 
-cbar = fig.colorbar(sc, ax=ax, label="Stosunek głosów nieważnych\n I vs. II tura")
+cbar = fig.colorbar(sc, ax=ax, label="Różnica głosów nieważnych\n między I vs. II tura")
 ax.set_axis_off()
 # plt.style.use('dark_background')
-ax.set_title("Zmiana liczby utraconych głosów między \n I a II turą (po obwodach) (j.ewidencyjne)")
+ax.set_title("Zmiana utraconych głosów  \n między I a II turą (po obwodach) (j.ewidencyjne)")
 fig.text(0.5, 0.1, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
 fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=48, color="grey", alpha=0.25)
 # plt.tight_layout()
@@ -279,13 +279,8 @@ fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, font
 # fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center", rotation=30,
 #          fontsize=48, color="grey", alpha=0.25)
 
-plt.savefig("trz_naw_utracone.png", format='png',dpi=1200)
+plt.savefig("trz_naw_utracone.png", format='png',dpi=600)
 plt.show()
-
-
-
-
-
 sys.exit()
 idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
 flows = np.zeros((*first_round_votes.shape, 2))
