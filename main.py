@@ -181,10 +181,6 @@ else:
     time.sleep(1)
     # print(mask_missing_street)
 
-import json, unicodedata, pandas as pd, geopandas as gpd
-from shapely.geometry import Point
-import matplotlib.pyplot as plt
-
 import json, unicodedata, pandas as pd, geopandas as gpd, matplotlib.pyplot as plt, matplotlib.colors as mcolors
 from shapely.geometry import Point
 
@@ -212,7 +208,7 @@ df_votes["score"] = (df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[
 df_votes["tot"]   = df_votes[trz] + df_votes[naw]
 
 tv_min, tv_max = df_votes["tot"].min(), df_votes["tot"].max()
-df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)   # 4 → 20 pt
+df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)
 
 df_ok = df_votes.dropna(subset=["x2180", "y2180", "score"])
 gdf_pts = gpd.GeoDataFrame(
@@ -221,29 +217,29 @@ gdf_pts = gpd.GeoDataFrame(
     crs="EPSG:2180"
 ).to_crs(4326)
 
-gdf_muni = gpd.read_file(
-    "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp"
-).to_crs(4326)
+gdf_muni = gpd.read_file( "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp").to_crs(4326)
+# gdf_muni = gpd.read_file( "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A03_Granice_gmin.shp").to_crs(4326)
 
-cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["blue", "purple", "orange"])
+cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["blue", "orange"])
 normc = plt.Normalize(-1, 1)
 
-fig, ax = plt.subplots(figsize=(6, 6))
-gdf_muni.plot(ax=ax, edgecolor="grey", facecolor="none", linewidth=0.4)
+fig, ax = plt.subplots(figsize=(8, 8))
+gdf_muni.plot(ax=ax, edgecolor="grey", facecolor="none", linewidth=0.1)
 
 sc = ax.scatter(
     gdf_pts.geometry.x, gdf_pts.geometry.y,
-    c=gdf_pts["score"], cmap=cmap, norm=normc,
-    s=gdf_pts["msize"], alpha=0.8, edgecolors="none"
+    c=gdf_pts["score"], cmap=cmap, norm=normc,marker='.',
+    s=gdf_pts["msize"] * 1, alpha=0.8, edgecolors="none"
 )
 
 cbar = fig.colorbar(sc, ax=ax, label="(Trz − Naw) / (Trz + Naw)")
 ax.set_axis_off()
-
+# plt.style.use('dark_background')
+ax.set_title("Stosunek głosów Trzaskowski vs. Nawrocki\n we wszystkich obwodach (j. ewidencyjne)")
 fig.text(0.5, 0.1, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
 fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=38, color="grey", alpha=0.25)
 # plt.tight_layout()
-plt.savefig('trz-naw.png',dpi=600, format='png')
+plt.savefig("trz_naw_je.png", format='png',dpi=800)
 plt.show()
 sys.exit()
 idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
