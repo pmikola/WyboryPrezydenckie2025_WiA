@@ -3,9 +3,12 @@
 # Attention: Used datasets in calculations
 #  https://wybory.gov.pl/prezydent2025/pl/dane_w_arkuszach
 import io
+import re
 import sys
 import zipfile
 
+import contextily
+import geojson
 import matplotlib
 import pandas as pd, numpy as np, matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -21,6 +24,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import os, math, json, time, requests, pandas as pd
+
+from scipy.stats import gaussian_kde
+from sklearn import preprocessing
 from tqdm.auto import tqdm
 from xml.etree import ElementTree as ET
 
@@ -174,39 +180,70 @@ else:
     # TODO : filling missed geocords
     time.sleep(1)
     # print(mask_missing_street)
-sys.exit()
-# print(out_paraquet['latitude'],out_paraquet['longitude'])
-lat_min, lat_max = 49.002063, 54.835563
-lon_min, lon_max = 14.124562, 24.145562
-# filtered_out_paraquet = out_paraquet
-filtered_out_paraquet = out_paraquet[
-    out_paraquet['latitude'].between(lat_min, lat_max) &
-    out_paraquet['longitude'].between(lon_min, lon_max)
-]
-import geopandas as gpd
-import pandas as pd
-gdf_points = gpd.GeoDataFrame(
-    filtered_out_paraquet,
-    geometry=gpd.points_from_xy(filtered_out_paraquet['longitude'], filtered_out_paraquet['latitude']),
-    crs="EPSG:4326"
-)
 
-gdf_muni = gpd.read_file("PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp")
-#gdf_muni = gdf_muni.to_crs("EPSG:4326"),
+import json, unicodedata, pandas as pd, geopandas as gpd
+from shapely.geometry import Point
+import matplotlib.pyplot as plt
 
-print(filtered_out_paraquet['latitude'])
+import json, unicodedata, pandas as pd, geopandas as gpd, matplotlib.pyplot as plt, matplotlib.colors as mcolors
+from shapely.geometry import Point
+
+def norm_str(t):
+    t = unicodedata.normalize("NFKD", str(t) or "").casefold()
+    t = " ".join(t.replace(",", " ,").split())
+    return t.rstrip(",")
+
+xls = "protokoly_po_obwodach_w_drugiej_turze_utf8.xlsx"
+df_votes = pd.read_excel(xls, sheet_name="Arkusz")
+
+with open("exp_obwody.geojson", encoding="utf-8") as f:
+    gj = json.load(f)
+
+coord_lookup = {norm_str(ft["properties"].get("pelna_siedziba", "")): ft["geometry"]["coordinates"]
+                for ft in gj["features"] if ft.get("geometry")}
+
+df_votes[["x2180", "y2180"]] = df_votes["Siedziba"].apply(
+    lambda a: pd.Series(coord_lookup.get(norm_str(a), (pd.NA, pd.NA))))
+
+naw = "NAWROCKI Karol Tadeusz"
+trz = "TRZASKOWSKI Rafał Kazimierz"
+
+df_votes["score"] = (df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
+df_votes["tot"]   = df_votes[trz] + df_votes[naw]
+
+tv_min, tv_max = df_votes["tot"].min(), df_votes["tot"].max()
+df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)   # 4 → 20 pt
+
+df_ok = df_votes.dropna(subset=["x2180", "y2180", "score"])
+gdf_pts = gpd.GeoDataFrame(
+    df_ok,
+    geometry=[Point(x, y) for x, y in zip(df_ok.x2180, df_ok.y2180)],
+    crs="EPSG:2180"
+).to_crs(4326)
+
+gdf_muni = gpd.read_file(
+    "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp"
+).to_crs(4326)
+
+cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["blue", "purple", "orange"])
+normc = plt.Normalize(-1, 1)
+
 fig, ax = plt.subplots(figsize=(6, 6))
-gdf_muni.plot(ax=ax, edgecolor="gray", facecolor="none", linewidth=0.5)
-gdf_points.plot(
-    ax=ax,
-    marker=".",
-    color="red",
-    markersize=3,
-    label="Filtered Points"
+gdf_muni.plot(ax=ax, edgecolor="grey", facecolor="none", linewidth=0.4)
+
+sc = ax.scatter(
+    gdf_pts.geometry.x, gdf_pts.geometry.y,
+    c=gdf_pts["score"], cmap=cmap, norm=normc,
+    s=gdf_pts["msize"], alpha=0.8, edgecolors="none"
 )
 
-ax.set_title("Jednostki ewidencyjne")
-ax.legend()
+cbar = fig.colorbar(sc, ax=ax, label="(Trz − Naw) / (Trz + Naw)")
+ax.set_axis_off()
+
+fig.text(0.5, 0.1, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
+fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=38, color="grey", alpha=0.25)
+# plt.tight_layout()
+plt.savefig('trz-naw.png',dpi=600, format='png')
 plt.show()
 sys.exit()
 idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
