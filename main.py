@@ -207,24 +207,32 @@ naw = "NAWROCKI Karol Tadeusz"
 trz = "TRZASKOWSKI Rafał Kazimierz"
 
 idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
+
 flows = np.zeros((*first_round_votes.shape, 2))
 for k, name in enumerate(names_1):
     p = transfer_pct_to_n[name]
     flows[:, k, idx_naw]   = first_round_votes[:, k] * p
     flows[:, k, idx_trz] = first_round_votes[:, k] * (1 - p)
 
-print(flows.shape)
-sys.exit()
-df_votes["score"] = (all_mised_2-all_mised_1)#(df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
-df_votes["tot"]   = (all_mised_2 + all_mised_1)#df_votes[trz] + df_votes[naw]
+flows = flows.sum(axis=1)
+pred_naw = flows[:, idx_naw]
+pred_trz = flows[:, idx_trz]
+act_naw  = df_votes[naw]
+act_trz  = df_votes[trz]
+pred_naw_safe = np.where(pred_naw == 0, np.nan, pred_naw)
+pred_trz_safe = np.where(pred_trz == 0, np.nan, pred_trz)
+g_pct_naw =  (act_naw - pred_naw) / pred_naw_safe
+g_pct_trz = (act_trz - pred_trz) / pred_trz_safe
+df_votes["score"] = ((act_trz-pred_trz) / (pred_trz))*100
+df_votes["tot"]   =  (act_trz+pred_trz )
 
 tv_min, tv_max = df_votes["tot"].min(), df_votes["tot"].max()
 df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)
 mask = (
     df_votes["x2180"].notna() &
     df_votes["y2180"].notna() &
-    (df_votes[naw] < df_votes[trz]) &
-    (df_votes["score"] > 0)
+    #(df_votes[naw] < df_votes[trz]) &
+    (df_votes["score"] > 100)
 )
 df_sel = df_votes[mask].copy()
 df_ok = df_sel.dropna(subset=["x2180", "y2180", "score"])
@@ -233,12 +241,12 @@ gdf_pts = gpd.GeoDataFrame(
     geometry=[Point(x, y) for x, y in zip(df_ok.x2180, df_ok.y2180)],
     crs="EPSG:2180"
 ).to_crs(4326)
-vmin, vmax = gdf_pts["score"].min(), gdf_pts["score"].max()
-
 gdf_muni = gpd.read_file( "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp").to_crs(4326)
 # gdf_muni = gpd.read_file( "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A03_Granice_gmin.shp").to_crs(4326)
 
-cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["green", "red"])
+cmap  = mcolors.LinearSegmentedColormap.from_list(
+    "div", ["green", "red"])
+vmin, vmax = gdf_pts["score"].min(), gdf_pts["score"].max()
 normc = plt.Normalize(vmin=vmin, vmax=vmax)
 
 fig, ax = plt.subplots(figsize=(8, 8))
@@ -246,14 +254,14 @@ gdf_muni.plot(ax=ax, edgecolor="grey", facecolor="none", linewidth=0.1)
 
 sc = ax.scatter(
     gdf_pts.geometry.x, gdf_pts.geometry.y,
-    c=gdf_pts["score"], cmap=cmap, norm=normc,marker='.',
-    s=gdf_pts["msize"] * 0.8, alpha=0.8, edgecolors="none"
+    c=gdf_pts["score"], cmap=cmap,marker='o',
+    s=gdf_pts["msize"] * 3, alpha=0.8, edgecolors="none"
 )
 
-cbar = fig.colorbar(sc, ax=ax, label="Różnica głosów nieważnych\n między I vs. II tura")
+cbar = fig.colorbar(sc, ax=ax, label="Przyrost Trzaskowskiego \n między I vs. II tura [%] ")
 ax.set_axis_off()
 # plt.style.use('dark_background')
-ax.set_title("Zmiana utraconych głosów  między I a II turą \n(zaznaczone obwody w których wygrał Trzaskowski) \n(j.ewidencyjne)")
+ax.set_title("Przyrost Trzaskowskiego pow. 100% między I a II turą \n z modelem rozdziału głosów innych kandydatów  \nz I tury (obwody) (j.ewidencyjne)")
 fig.text(0.5, 0.1, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
 fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=48, color="grey", alpha=0.25)
 # plt.tight_layout()
