@@ -96,6 +96,7 @@ avm1 = df_1.columns[-18]
 all_votes_missed_1 = df_1[avm1].fillna(0).to_numpy(dtype=float)
 cwsx1 = df_1.columns[-17]
 cards_with_second_x_1 = df_1[cwsx1].fillna(0).to_numpy(dtype=float)
+all_mised_1 = total_cards_from_urns_1 -total_cards_eligible_from_urns_1 + all_votes_missed_1
 
 full_names_2 = df_2.columns[-2:].tolist()
 tcfu2 = df_2.columns[-10]
@@ -122,9 +123,9 @@ total_first_votes = np.sum(first_round_votes,axis=0)
 
 PARQUET_PATH = "pooling_districts_PL.parquet"
 download_coord_data = True
-TOKEN = "pk.eyJ1IjoicG1pa29sMSIsImEiOiJjbWJtaHdraWIxMmxoMmtxdjV2ZGM3a285In0.P0S7qlTM4yZq9noJaAcwzw"
-tomtom_api_key = "FDdJ6DFVf9tsNx2XzddR5T12ZkmQ81W9"
-google_api_key = "AIzaSyA367-N-J9P9Ash_Nm0kChdtVlnSaxPmxY"
+TOKEN = "#"
+tomtom_api_key = "#"
+google_api_key = "#"
 
 if download_coord_data and not os.path.exists(PARQUET_PATH):
     BATCH_URL = "https://api.mapbox.com/search/geocode/v6/batch"
@@ -205,14 +206,28 @@ df_votes[["x2180", "y2180"]] = df_votes["Siedziba"].apply(
 naw = "NAWROCKI Karol Tadeusz"
 trz = "TRZASKOWSKI Rafał Kazimierz"
 
-df_votes["score"] = (cards_with_second_x_2-cards_with_second_x_1)#(df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
-df_votes["tot"]   = (cards_with_second_x_1 + cards_with_second_x_2)#df_votes[trz] + df_votes[naw]
+idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
+flows = np.zeros((*first_round_votes.shape, 2))
+for k, name in enumerate(names_1):
+    p = transfer_pct_to_n[name]
+    flows[:, k, idx_naw]   = first_round_votes[:, k] * p
+    flows[:, k, idx_trz] = first_round_votes[:, k] * (1 - p)
+
+print(flows.shape)
+sys.exit()
+df_votes["score"] = (all_mised_2-all_mised_1)#(df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
+df_votes["tot"]   = (all_mised_2 + all_mised_1)#df_votes[trz] + df_votes[naw]
 
 tv_min, tv_max = df_votes["tot"].min(), df_votes["tot"].max()
 df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)
-
-
-df_ok = df_votes.dropna(subset=["x2180", "y2180", "score"])
+mask = (
+    df_votes["x2180"].notna() &
+    df_votes["y2180"].notna() &
+    (df_votes[naw] < df_votes[trz]) &
+    (df_votes["score"] > 0)
+)
+df_sel = df_votes[mask].copy()
+df_ok = df_sel.dropna(subset=["x2180", "y2180", "score"])
 gdf_pts = gpd.GeoDataFrame(
     df_ok,
     geometry=[Point(x, y) for x, y in zip(df_ok.x2180, df_ok.y2180)],
@@ -238,7 +253,7 @@ sc = ax.scatter(
 cbar = fig.colorbar(sc, ax=ax, label="Różnica głosów nieważnych\n między I vs. II tura")
 ax.set_axis_off()
 # plt.style.use('dark_background')
-ax.set_title("Zmiana utraconych głosów  \n między I a II turą (po obwodach) (j.ewidencyjne)")
+ax.set_title("Zmiana utraconych głosów  między I a II turą \n(zaznaczone obwody w których wygrał Trzaskowski) \n(j.ewidencyjne)")
 fig.text(0.5, 0.1, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
 fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=48, color="grey", alpha=0.25)
 # plt.tight_layout()
