@@ -181,6 +181,7 @@ else:
     time.sleep(1)
     # print(mask_missing_street)
 
+
 import json, unicodedata, pandas as pd, geopandas as gpd, matplotlib.pyplot as plt, matplotlib.colors as mcolors
 from shapely.geometry import Point
 
@@ -204,11 +205,12 @@ df_votes[["x2180", "y2180"]] = df_votes["Siedziba"].apply(
 naw = "NAWROCKI Karol Tadeusz"
 trz = "TRZASKOWSKI Rafał Kazimierz"
 
-df_votes["score"] = (df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
-df_votes["tot"]   = df_votes[trz] + df_votes[naw]
+df_votes["score"] = ((all_votes_missed_2 - all_votes_missed_1) )#(df_votes[trz] - df_votes[naw]) / (df_votes[trz] + df_votes[naw])
+df_votes["tot"]   = all_votes_missed_2#df_votes[trz] + df_votes[naw]
 
 tv_min, tv_max = df_votes["tot"].min(), df_votes["tot"].max()
 df_votes["msize"] = 4 + 16 * (df_votes["tot"] - tv_min) / (tv_max - tv_min)
+
 
 df_ok = df_votes.dropna(subset=["x2180", "y2180", "score"])
 gdf_pts = gpd.GeoDataFrame(
@@ -216,12 +218,13 @@ gdf_pts = gpd.GeoDataFrame(
     geometry=[Point(x, y) for x, y in zip(df_ok.x2180, df_ok.y2180)],
     crs="EPSG:2180"
 ).to_crs(4326)
+vmin, vmax = gdf_pts["score"].min(), gdf_pts["score"].max()
 
 gdf_muni = gpd.read_file( "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A06_Granice_obrebow_ewidencyjnych.shp").to_crs(4326)
 # gdf_muni = gpd.read_file( "PRG_jednostki_administracyjne_2024/PRG_jednostki_administracyjne_2024/A03_Granice_gmin.shp").to_crs(4326)
 
-cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["blue", "orange"])
-normc = plt.Normalize(-1, 1)
+cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["green", "red"])
+normc = plt.Normalize(vmin=vmin, vmax=vmax)
 
 fig, ax = plt.subplots(figsize=(8, 8))
 gdf_muni.plot(ax=ax, edgecolor="grey", facecolor="none", linewidth=0.1)
@@ -229,18 +232,60 @@ gdf_muni.plot(ax=ax, edgecolor="grey", facecolor="none", linewidth=0.1)
 sc = ax.scatter(
     gdf_pts.geometry.x, gdf_pts.geometry.y,
     c=gdf_pts["score"], cmap=cmap, norm=normc,marker='.',
-    s=gdf_pts["msize"] * 1, alpha=0.8, edgecolors="none"
+    s=gdf_pts["msize"] * 0.8, alpha=0.8, edgecolors="none"
 )
 
-cbar = fig.colorbar(sc, ax=ax, label="(Trz − Naw) / (Trz + Naw)")
+cbar = fig.colorbar(sc, ax=ax, label="Stosunek głosów nieważnych\n I vs. II tura")
 ax.set_axis_off()
 # plt.style.use('dark_background')
-ax.set_title("Stosunek głosów Trzaskowski vs. Nawrocki\n we wszystkich obwodach (j. ewidencyjne)")
+ax.set_title("Zmiana liczby utraconych głosów między \n I a II turą (po obwodach) (j.ewidencyjne)")
 fig.text(0.5, 0.1, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
-fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=38, color="grey", alpha=0.25)
+fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center",rotation=30, fontsize=48, color="grey", alpha=0.25)
 # plt.tight_layout()
-plt.savefig("trz_naw_je.png", format='png',dpi=800)
+# joined = gpd.sjoin(
+#     gdf_pts[["score", "geometry"]],
+#     gdf_muni[["geometry"]],
+#     how="inner",
+#     predicate="within"
+# )
+#
+# mean_score = joined.groupby("index_right")["score"].mean()
+# gdf_muni["mean_score"] = mean_score          # NaN tam, gdzie brak punktów
+#
+# # ─── 2  mapa ────────────────────────────────────────────────────────────
+# cmap  = mcolors.LinearSegmentedColormap.from_list("bo", ["blue", "orange"])
+# normc = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+#
+# fig, ax = plt.subplots(figsize=(8, 8))
+#
+# gdf_muni.plot(
+#     ax=ax,
+#     column="mean_score",
+#     cmap=cmap,
+#     norm=normc,
+#     edgecolor="grey",
+#     linewidth=0.1,
+#     missing_kwds=dict(color="white", alpha=0)   # jednostki bez danych = puste
+# )
+#
+# fig.colorbar(
+#     plt.cm.ScalarMappable(norm=normc, cmap=cmap),
+#     ax=ax, label="Średni (Trz − Naw) / (Trz + Naw)"
+# )
+#
+# ax.set_axis_off()
+# ax.set_title("Średni stosunek głosów Trzaskowski / Nawrocki\nw jednostkach ewidencyjnych")
+# fig.text(0.5, 0.08, "Źródło: GUGIK na podstawie danych PKW", ha="center", va="bottom", fontsize=8)
+# fig.text(0.75, 0.5, "@rezolucjonista", ha="right", va="center", rotation=30,
+#          fontsize=48, color="grey", alpha=0.25)
+
+plt.savefig("trz_naw_utracone.png", format='png',dpi=1200)
 plt.show()
+
+
+
+
+
 sys.exit()
 idx_naw, idx_trz = names_2.index(names_2[0]), names_2.index(names_2[1])
 flows = np.zeros((*first_round_votes.shape, 2))
